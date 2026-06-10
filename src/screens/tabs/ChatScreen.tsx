@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,56 +12,120 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
-  Mic,
+  ArrowUp,
   Moon,
-  Phone,
   Plus,
   Sun,
 } from 'lucide-react-native';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
 import type { ThemeColors } from '../../theme/colors';
 
+// Coach identity is not yet modeled in the DB, so the displayed name/avatar stay
+// hardcoded. The coach's user id (used as the receiver when sending) is derived
+// from the loaded conversation instead — see `coachId` below.
 const COACH = { initial: 'M', name: 'Maya Reyes' };
 
-type Bubble = {
-  key: string;
-  from: 'coach' | 'member';
-  text: string;
-};
+const MESSAGE_FIELDS = 'id, sender_id, receiver_id, content, created_at';
 
-const CONVERSATION: Bubble[] = [
-  {
-    key: 'm1',
-    from: 'coach',
-    text: "Morning Jon — saw you hit your breath rep streak. How's the body feeling?",
-  },
-  {
-    key: 'm2',
-    from: 'member',
-    text: 'Pretty good. Sleep was rough but I still got 4 hours of focus in.',
-  },
-  {
-    key: 'm3',
-    from: 'coach',
-    text:
-      "Solid. Want to swap tomorrow's focus block for a mobility rep instead? You earned the reset.",
-  },
-  {
-    key: 'm4',
-    from: 'member',
-    text: "Yeah, let's do that. Same time?",
-  },
-  {
-    key: 'm5',
-    from: 'coach',
-    text: "Same time. I'll send the calendar over in a sec.",
-  },
-];
+type Message = {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  content: string;
+  created_at: string | null;
+};
 
 export default function ChatScreen() {
   const [draft, setDraft] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
   const { colors, isDark, toggleTheme } = useTheme();
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const scrollRef = useRef<ScrollView>(null);
+
+  // The other party in the thread is the coach. RLS restricts the rows to
+  // messages this member sent or received, so any counterpart id is the coach.
+  const coachId = useMemo(() => {
+    const fromCoach = messages.find((m) => m.sender_id !== userId);
+    if (fromCoach) return fromCoach.sender_id;
+    const toCoach = messages.find((m) => m.receiver_id !== userId);
+    return toCoach ? toCoach.receiver_id : null;
+  }, [messages, userId]);
+
+  // Load the conversation on mount (and whenever the signed-in user changes).
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!userId) {
+        setMessages([]);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      const { data } = await supabase
+        .from('messages')
+        .select(MESSAGE_FIELDS)
+        .order('created_at', { ascending: true });
+      if (!active) return;
+      setMessages((data as Message[] | null) ?? []);
+      setLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  // Realtime: append new messages involving this member as they arrive.
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`messages:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => {
+          const row = payload.new as Message;
+          if (row.sender_id !== userId && row.receiver_id !== userId) return;
+          setMessages((prev) =>
+            prev.some((m) => m.id === row.id) ? prev : [...prev, row],
+          );
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
+  const canSend = draft.trim().length > 0 && !!userId && !!coachId && !sending;
+
+  const handleSend = useCallback(async () => {
+    const text = draft.trim();
+    if (!text || !userId || !coachId || sending) return;
+    setSending(true);
+    setDraft('');
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({ sender_id: userId, receiver_id: coachId, content: text })
+      .select(MESSAGE_FIELDS)
+      .single();
+    setSending(false);
+    if (error) {
+      setDraft(text); // restore the draft so the message isn't lost
+      return;
+    }
+    if (data) {
+      const row = data as Message;
+      setMessages((prev) =>
+        prev.some((m) => m.id === row.id) ? prev : [...prev, row],
+      );
+    }
+  }, [draft, userId, coachId, sending]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -88,9 +152,6 @@ export default function ChatScreen() {
           </View>
 
           <View style={styles.headerActions}>
-            <Pressable style={styles.headerBtn} hitSlop={8}>
-              <Phone size={20} color={colors.gold} strokeWidth={2.2} />
-            </Pressable>
             <Pressable
               style={styles.lightToggle}
               hitSlop={8}
@@ -109,24 +170,28 @@ export default function ChatScreen() {
         </View>
 
         <ScrollView
+          ref={scrollRef}
           style={styles.flex}
           contentContainerStyle={styles.messages}
           showsVerticalScrollIndicator={false}
+          onContentSizeChange={() =>
+            scrollRef.current?.scrollToEnd({ animated: true })
+          }
         >
-          <View style={styles.dateSeparator}>
-            <View style={styles.dateLine} />
-            <Text style={styles.dateText}>Today · 10:24 AM</Text>
-            <View style={styles.dateLine} />
-          </View>
+          {!loading && messages.length === 0 ? (
+            <Text style={styles.emptyText}>
+              No messages yet. Say hi to {COACH.name.split(' ')[0]}.
+            </Text>
+          ) : null}
 
-          {CONVERSATION.map((m) =>
-            m.from === 'coach' ? (
-              <View key={m.key} style={styles.coachBubble}>
-                <Text style={styles.coachBubbleText}>{m.text}</Text>
+          {messages.map((m) =>
+            m.sender_id === userId ? (
+              <View key={m.id} style={styles.memberBubble}>
+                <Text style={styles.memberBubbleText}>{m.content}</Text>
               </View>
             ) : (
-              <View key={m.key} style={styles.memberBubble}>
-                <Text style={styles.memberBubbleText}>{m.text}</Text>
+              <View key={m.id} style={styles.coachBubble}>
+                <Text style={styles.coachBubbleText}>{m.content}</Text>
               </View>
             ),
           )}
@@ -144,9 +209,15 @@ export default function ChatScreen() {
               placeholderTextColor={colors.fgMuted}
               style={styles.input}
               multiline
+              onSubmitEditing={handleSend}
             />
-            <Pressable style={styles.micBtn} hitSlop={8}>
-              <Mic size={18} color={colors.gold} strokeWidth={2.2} />
+            <Pressable
+              style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
+              hitSlop={8}
+              onPress={handleSend}
+              disabled={!canSend}
+            >
+              <ArrowUp size={18} color={colors.bg} strokeWidth={2.6} />
             </Pressable>
           </View>
         </View>
@@ -230,22 +301,11 @@ const makeStyles = (colors: ThemeColors) =>
     paddingBottom: 16,
     gap: 8,
   },
-  dateSeparator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginVertical: 6,
-  },
-  dateLine: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.border,
-  },
-  dateText: {
+  emptyText: {
     color: colors.fgMuted,
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.4,
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 24,
   },
 
   coachBubble: {
@@ -309,13 +369,17 @@ const makeStyles = (colors: ThemeColors) =>
     paddingVertical: 8,
     maxHeight: 120,
   },
-  micBtn: {
+  sendBtn: {
     width: 30,
     height: 30,
     borderRadius: 15,
+    backgroundColor: colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 4,
     marginBottom: 4,
+  },
+  sendBtnDisabled: {
+    opacity: 0.4,
   },
 });
