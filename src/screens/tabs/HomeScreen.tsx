@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -11,7 +11,8 @@ import {
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../contexts/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { useMemberProfile } from '../../hooks/useMemberProfile';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -36,6 +37,8 @@ export default function HomeScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { member, repsCount, sessionsCount, loading } = useMemberProfile();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const firstName = member?.first_name?.trim() || '';
   const greetingName = firstName || 'there';
@@ -153,6 +156,8 @@ export default function HomeScreen() {
 }
 
 function RepsRow({ label, count }: { label: string; count: number }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.repsRow}>
       <Text style={styles.repsLabel}>{label}</Text>
@@ -164,7 +169,8 @@ function RepsRow({ label, count }: { label: string; count: number }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   scrollBody: {

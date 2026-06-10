@@ -5,6 +5,7 @@ import {
   TextInput,
   ScrollView,
   Pressable,
+  ActivityIndicator,
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,10 +22,15 @@ import {
   Timer,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors } from '../../theme/colors';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { useTheme } from '../../contexts/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { useExercises } from '../../hooks/useExercises';
-import type { RootStackParamList } from '../../navigation/types';
+import { useExerciseSearch } from '../../hooks/useExerciseSearch';
+import type { RootStackParamList, TabParamList } from '../../navigation/types';
+import type { Exercise } from '../../hooks/useExercises';
 
 // The fixed set of categories shown in "Browse by category". Counts are
 // derived from real data; tiles render even when a category has 0 exercises.
@@ -39,8 +45,26 @@ const CATEGORIES: { name: string; Icon: typeof Gauge }[] = [
 export default function RepsScreen() {
   const [query, setQuery] = useState('');
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<
+      CompositeNavigationProp<
+        BottomTabNavigationProp<TabParamList, 'Reps'>,
+        NativeStackNavigationProp<RootStackParamList>
+      >
+    >();
   const { exercises, loading, error } = useExercises();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  // Live search of the exercises table, shown as a dropdown under the box.
+  const [searchFocused, setSearchFocused] = useState(false);
+  const { results, loading: searching, active } = useExerciseSearch(query);
+  const showResults = searchFocused && active;
+
+  const selectExercise = (exercise: Exercise) => {
+    setQuery('');
+    setSearchFocused(false);
+    navigation.navigate('ExerciseDetail', { exercise });
+  };
 
   // "Today's recommended" is simply the first exercise from the table.
   const featured = exercises[0] ?? null;
@@ -61,6 +85,7 @@ export default function RepsScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollBody}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <View>
           <Text style={styles.eyebrow}>TRAIN</Text>
@@ -68,7 +93,10 @@ export default function RepsScreen() {
         </View>
 
         <View style={styles.actionStack}>
-          <Pressable style={[styles.actionCard, styles.actionCardDefault]}>
+          <Pressable
+            style={[styles.actionCard, styles.actionCardDefault]}
+            onPress={() => navigation.navigate('Coach')}
+          >
             <View style={[styles.actionIcon, styles.actionIconDefault]}>
               <CalendarDays size={20} color={colors.gold} strokeWidth={2.2} />
             </View>
@@ -98,15 +126,53 @@ export default function RepsScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.searchWrap}>
-          <Search size={18} color={colors.fgMuted} strokeWidth={2} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search Exercises, Sessions..."
-            placeholderTextColor={colors.fgMuted}
-            style={styles.searchInput}
-          />
+        <View>
+          <View style={styles.searchWrap}>
+            <Search size={18} color={colors.fgMuted} strokeWidth={2} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              placeholder="Search Exercises, Sessions..."
+              placeholderTextColor={colors.fgMuted}
+              style={styles.searchInput}
+            />
+          </View>
+
+          {showResults ? (
+            <View style={styles.dropdown}>
+              {searching ? (
+                <View style={styles.dropdownStatus}>
+                  <ActivityIndicator size="small" color={colors.gold} />
+                </View>
+              ) : results.length === 0 ? (
+                <View style={styles.dropdownStatus}>
+                  <Text style={styles.dropdownEmpty}>No exercises found</Text>
+                </View>
+              ) : (
+                results.map((ex, i) => (
+                  <Pressable
+                    key={ex.id}
+                    style={[styles.resultRow, i > 0 && styles.resultRowBorder]}
+                    onPress={() => selectExercise(ex)}
+                  >
+                    <View style={styles.flex}>
+                      <Text style={styles.resultName} numberOfLines={1}>
+                        {ex.name ?? 'Untitled exercise'}
+                      </Text>
+                      {ex.category ? (
+                        <Text style={styles.resultCategory} numberOfLines={1}>
+                          {ex.category}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <ChevronRight size={16} color={colors.fgMuted} strokeWidth={2} />
+                  </Pressable>
+                ))
+              )}
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.section}>
@@ -186,7 +252,8 @@ export default function RepsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   scrollBody: {
@@ -253,6 +320,33 @@ const styles = StyleSheet.create({
     color: colors.fg,
     fontSize: 15,
   },
+  dropdown: {
+    marginTop: 8,
+    backgroundColor: colors.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  dropdownStatus: {
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  dropdownEmpty: { color: colors.fgMuted, fontSize: 14 },
+  resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  resultRowBorder: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  resultName: { color: colors.fg, fontSize: 15, fontWeight: '600' },
+  resultCategory: { color: colors.fgMuted, fontSize: 12, marginTop: 2 },
 
   section: { gap: 10 },
   sectionLabel: {

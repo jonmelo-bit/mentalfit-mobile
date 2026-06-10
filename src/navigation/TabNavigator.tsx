@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -6,7 +6,8 @@ import {
   BottomTabBarProps,
 } from '@react-navigation/bottom-tabs';
 import { Dumbbell, Users, Home, MessageCircle, User } from 'lucide-react-native';
-import { colors } from '../theme/colors';
+import { useTheme } from '../contexts/ThemeContext';
+import { darkColors, type ThemeColors } from '../theme/colors';
 import RepsScreen from '../screens/tabs/RepsScreen';
 import CoachScreen from '../screens/tabs/CoachScreen';
 import HomeScreen from '../screens/tabs/HomeScreen';
@@ -32,6 +33,8 @@ const TABS: TabDef[] = [
 
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       <View style={styles.row}>
@@ -71,7 +74,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                 >
                   <Icon
                     size={26}
-                    color={isActive ? colors.bg : colors.fg}
+                    color={isActive ? colors.navBg : colors.navFg}
                     strokeWidth={2.2}
                   />
                 </View>
@@ -94,7 +97,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
             >
               <Icon
                 size={22}
-                color={isActive ? colors.gold : colors.fgMuted}
+                color={isActive ? colors.gold : darkColors.fgMuted}
                 strokeWidth={isActive ? 2.4 : 1.8}
               />
               <Text style={[styles.label, isActive && styles.labelActive]}>
@@ -122,11 +125,12 @@ export default function TabNavigator() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   bar: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.navBg,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderTopColor: darkColors.border,
     paddingTop: 12,
     paddingHorizontal: 16,
   },
@@ -163,12 +167,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.gold,
   },
   centerCircleInactive: {
-    backgroundColor: colors.elevated,
+    backgroundColor: darkColors.elevated,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
+    borderColor: darkColors.borderStrong,
   },
   label: {
-    color: colors.fg,
+    color: colors.navFg,
     fontSize: 10,
     letterSpacing: 0.3,
     fontWeight: '400',

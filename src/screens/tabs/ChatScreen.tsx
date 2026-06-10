@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -13,11 +13,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
   Mic,
+  Moon,
   Phone,
   Plus,
   Sun,
 } from 'lucide-react-native';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../contexts/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 
 const COACH = { initial: 'M', name: 'Maya Reyes' };
 
@@ -58,6 +60,8 @@ const CONVERSATION: Bubble[] = [
 
 export default function ChatScreen() {
   const [draft, setDraft] = useState('');
+  const { colors, isDark, toggleTheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -87,9 +91,19 @@ export default function ChatScreen() {
             <Pressable style={styles.headerBtn} hitSlop={8}>
               <Phone size={20} color={colors.gold} strokeWidth={2.2} />
             </Pressable>
-            <Pressable style={styles.lightToggle} hitSlop={8}>
-              <Sun size={16} color={colors.gold} strokeWidth={2.2} />
-              <Text style={styles.lightToggleText}>Light</Text>
+            <Pressable
+              style={styles.lightToggle}
+              hitSlop={8}
+              onPress={toggleTheme}
+            >
+              {isDark ? (
+                <Sun size={16} color={colors.gold} strokeWidth={2.2} />
+              ) : (
+                <Moon size={16} color={colors.gold} strokeWidth={2.2} />
+              )}
+              <Text style={styles.lightToggleText}>
+                {isDark ? 'Light' : 'Dark'}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -143,7 +157,8 @@ export default function ChatScreen() {
 
 const ACTIVE_GREEN = '#5EC26A';
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
 

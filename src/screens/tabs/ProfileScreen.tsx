@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, ScrollView, Pressable, Switch, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Bell,
@@ -10,9 +10,11 @@ import {
   MessageSquare,
   Pencil,
   Shield,
+  Sun,
   User as UserIcon,
 } from 'lucide-react-native';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../contexts/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { useAuth } from '../../contexts/AuthContext';
 
 const USER = {
@@ -39,10 +41,14 @@ type RowItem = {
   badge?: string;
   onPress?: () => void;
   destructive?: boolean;
+  // Renders on the trailing edge in place of the chevron (e.g. a toggle).
+  control?: React.ReactNode;
 };
 
 export default function ProfileScreen() {
   const { signOut } = useAuth();
+  const { colors, isDark, toggleTheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const personal: RowItem[] = [
     { key: 'info', label: 'Personal info', Icon: UserIcon },
@@ -50,6 +56,21 @@ export default function ProfileScreen() {
   ];
 
   const preferences: RowItem[] = [
+    {
+      key: 'lightmode',
+      label: 'Light Mode',
+      Icon: Sun,
+      onPress: toggleTheme,
+      control: (
+        <Switch
+          value={!isDark}
+          onValueChange={toggleTheme}
+          trackColor={{ false: colors.elevated, true: colors.gold }}
+          thumbColor="#FFFFFF"
+          ios_backgroundColor={colors.elevated}
+        />
+      ),
+    },
     { key: 'notifications', label: 'Notifications', Icon: Bell },
     { key: 'privacy', label: 'Privacy & security', Icon: Shield },
   ];
@@ -124,6 +145,8 @@ export default function ProfileScreen() {
 }
 
 function Section({ label, items }: { label: string; items: RowItem[] }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.section}>
       <Text style={styles.sectionLabel}>{label}</Text>
@@ -152,13 +175,19 @@ function Section({ label, items }: { label: string; items: RowItem[] }) {
               >
                 {item.label}
               </Text>
-              {item.badge ? (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{item.badge}</Text>
-                </View>
-              ) : null}
-              {!item.destructive && (
-                <ChevronRight size={16} color={colors.fgMuted} strokeWidth={2} />
+              {item.control ? (
+                item.control
+              ) : (
+                <>
+                  {item.badge ? (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{item.badge}</Text>
+                    </View>
+                  ) : null}
+                  {!item.destructive && (
+                    <ChevronRight size={16} color={colors.fgMuted} strokeWidth={2} />
+                  )}
+                </>
               )}
             </Pressable>
           </React.Fragment>
@@ -168,7 +197,8 @@ function Section({ label, items }: { label: string; items: RowItem[] }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   scrollBody: {

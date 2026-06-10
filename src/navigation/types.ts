@@ -1,6 +1,17 @@
 import type { Exercise } from '../hooks/useExercises';
 
 /**
+ * Tabs in the bottom tab navigator nested under the root stack's `Tabs` route.
+ */
+export type TabParamList = {
+  Reps: undefined;
+  Coach: undefined;
+  Home: undefined;
+  Chat: undefined;
+  Profile: undefined;
+};
+
+/**
  * Routes in the authenticated root stack. The tab navigator is nested under
  * `Tabs`; the gym flow screens are pushed on top of it.
  */
