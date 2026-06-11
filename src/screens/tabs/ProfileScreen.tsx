@@ -1,6 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, Switch, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   Bell,
   ChevronRight,
@@ -16,21 +18,10 @@ import {
 import { useTheme } from '../../contexts/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { useAuth } from '../../contexts/AuthContext';
+import { useMemberProfile } from '../../hooks/useMemberProfile';
+import type { RootStackParamList } from '../../navigation/types';
 
-const USER = {
-  initial: 'J',
-  name: 'Jon Melo',
-  jobTitle: 'Senior Engineer',
-  company: 'Forte',
-  timezone: 'Pacific Time · UTC-8',
-};
-
-const STATS = [
-  { key: 'reps', label: 'Reps', value: 47 },
-  { key: 'sessions', label: 'Sessions', value: 12 },
-  { key: 'exercises', label: 'Exercises', value: 28 },
-  { key: 'streak', label: 'Day streak', value: 5 },
-];
+type Nav = NativeStackNavigationProp<RootStackParamList, 'Tabs'>;
 
 const USAGE = { used: 5, total: 8 };
 
@@ -49,6 +40,30 @@ export default function ProfileScreen() {
   const { signOut } = useAuth();
   const { colors, isDark, toggleTheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const navigation = useNavigation<Nav>();
+  const { member, repsCount, sessionsCount, refetch } = useMemberProfile();
+
+  // The profile screen stays mounted while editing, so a plain mount-time load
+  // would go stale after a save. Refetch each time the screen regains focus.
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch]),
+  );
+
+  // Derive the display values from the loaded member row, with safe fallbacks
+  // for a not-yet-loaded or sparsely-filled profile.
+  const fullName =
+    [member?.first_name, member?.last_name].filter(Boolean).join(' ').trim();
+  const displayName = fullName || member?.email || 'Your profile';
+  const initial = (fullName || member?.email || '?').charAt(0).toUpperCase();
+
+  const stats = [
+    { key: 'reps', label: 'Reps', value: repsCount ?? 0 },
+    { key: 'sessions', label: 'Sessions', value: sessionsCount ?? 0 },
+    { key: 'exercises', label: 'Exercises', value: 28 },
+    { key: 'streak', label: 'Day streak', value: 5 },
+  ];
 
   const personal: RowItem[] = [
     { key: 'info', label: 'Personal info', Icon: UserIcon },
@@ -95,26 +110,31 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.userCard}>
-          <Pressable style={styles.editBtn}>
+          <Pressable
+            style={styles.editBtn}
+            onPress={() => navigation.navigate('EditProfile')}
+          >
             <Pencil size={14} color={colors.gold} strokeWidth={2.4} />
             <Text style={styles.editBtnText}>Edit</Text>
           </Pressable>
           <View style={styles.userHeader}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{USER.initial}</Text>
+              <Text style={styles.avatarText}>{initial}</Text>
             </View>
             <View style={styles.flex}>
-              <Text style={styles.userName}>{USER.name}</Text>
-              <Text style={styles.userJob}>
-                {USER.jobTitle} · {USER.company}
-              </Text>
-              <Text style={styles.userTimezone}>{USER.timezone}</Text>
+              <Text style={styles.userName}>{displayName}</Text>
+              {member?.email ? (
+                <Text style={styles.userJob}>{member.email}</Text>
+              ) : null}
+              {member?.phone_number ? (
+                <Text style={styles.userMeta}>{member.phone_number}</Text>
+              ) : null}
             </View>
           </View>
         </View>
 
         <View style={styles.statsRow}>
-          {STATS.map((s) => (
+          {stats.map((s) => (
             <View key={s.key} style={styles.statPill}>
               <Text style={styles.statValue}>{s.value}</Text>
               <Text style={styles.statLabel}>{s.label}</Text>
@@ -254,7 +274,7 @@ const makeStyles = (colors: ThemeColors) =>
   avatarText: { color: colors.bg, fontSize: 26, fontWeight: '700' },
   userName: { color: colors.fg, fontSize: 20, fontWeight: '700' },
   userJob: { color: colors.fgMuted, fontSize: 13, marginTop: 2 },
-  userTimezone: { color: colors.fgMuted, fontSize: 12, marginTop: 4 },
+  userMeta: { color: colors.fgMuted, fontSize: 12, marginTop: 4 },
 
   statsRow: { flexDirection: 'row', gap: 10 },
   statPill: {

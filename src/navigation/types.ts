@@ -23,4 +23,7 @@ export type RootStackParamList = {
   // The exercise is already loaded in the list, so pass it through rather
   // than refetching by id on the detail screen.
   ExerciseDetail: { exercise: Exercise };
+  // Edit the signed-in member's profile. Loads its own data on mount, so no
+  // params are needed.
+  EditProfile: undefined;
 };

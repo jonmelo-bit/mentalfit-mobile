@@ -6,6 +6,7 @@ import SignInScreen from '../screens/auth/SignInScreen';
 import TabNavigator from './TabNavigator';
 import ExerciseListScreen from '../screens/gym/ExerciseListScreen';
 import ExerciseDetailScreen from '../screens/gym/ExerciseDetailScreen';
+import EditProfileScreen from '../screens/profile/EditProfileScreen';
 import type { RootStackParamList } from './types';
 import { colors } from '../theme/colors';
 
@@ -31,6 +32,7 @@ export default function RootNavigator() {
       <Stack.Screen name="Tabs" component={TabNavigator} />
       <Stack.Screen name="ExerciseList" component={ExerciseListScreen} />
       <Stack.Screen name="ExerciseDetail" component={ExerciseDetailScreen} />
+      <Stack.Screen name="EditProfile" component={EditProfileScreen} />
     </Stack.Navigator>
   );
 }

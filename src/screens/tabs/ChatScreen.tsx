@@ -6,7 +6,6 @@ import {
   ScrollView,
   Pressable,
   KeyboardAvoidingView,
-  Platform,
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,10 +21,12 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import type { ThemeColors } from '../../theme/colors';
 
-// Coach identity is not yet modeled in the DB, so the displayed name/avatar stay
-// hardcoded. The coach's user id (used as the receiver when sending) is derived
-// from the loaded conversation instead — see `coachId` below.
+// The displayed coach name/avatar stay hardcoded for now. The coach's id (used
+// as the receiver when sending) is looked up on mount from the `coaches` table
+// by this well-known email — see `coachId` below. This means sending works even
+// before any messages exist.
 const COACH = { initial: 'M', name: 'Maya Reyes' };
+const COACH_EMAIL = 'coach@getforte.com';
 
 const MESSAGE_FIELDS = 'id, sender_id, receiver_id, content, created_at';
 
@@ -48,14 +49,32 @@ export default function ChatScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const scrollRef = useRef<ScrollView>(null);
 
-  // The other party in the thread is the coach. RLS restricts the rows to
-  // messages this member sent or received, so any counterpart id is the coach.
-  const coachId = useMemo(() => {
-    const fromCoach = messages.find((m) => m.sender_id !== userId);
-    if (fromCoach) return fromCoach.sender_id;
-    const toCoach = messages.find((m) => m.receiver_id !== userId);
-    return toCoach ? toCoach.receiver_id : null;
-  }, [messages, userId]);
+  const [coachId, setCoachId] = useState<string | null>(null);
+
+  // Look up the coach's user id directly on mount, by their well-known email,
+  // instead of inferring it from existing messages. Without this, an empty
+  // thread would leave coachId null and the send button permanently disabled.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('coaches')
+        .select('id')
+        .eq('email', COACH_EMAIL)
+        .maybeSingle();
+      if (!active) return;
+      console.log('[ChatScreen] coach lookup — error:', error);
+      console.log('[ChatScreen] coach lookup — data:', data);
+      if (error) {
+        console.error('[ChatScreen] failed to load coach:', error.message);
+        return;
+      }
+      setCoachId((data?.id as string | undefined) ?? null);
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Load the conversation on mount (and whenever the signed-in user changes).
   useEffect(() => {
@@ -67,11 +86,20 @@ export default function ChatScreen() {
         return;
       }
       setLoading(true);
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('messages')
         .select(MESSAGE_FIELDS)
         .order('created_at', { ascending: true });
       if (!active) return;
+      // Debug: surface exactly what the messages query returns. If `data` is an
+      // empty array with no error, the rows exist but RLS is filtering them out
+      // (check that messages.receiver_id/sender_id matches this auth.uid()).
+      console.log('[ChatScreen] load messages — userId:', userId);
+      console.log('[ChatScreen] load messages — error:', error);
+      console.log('[ChatScreen] load messages — rows:', data?.length ?? 0, data);
+      if (error) {
+        console.error('[ChatScreen] failed to load messages:', error.message);
+      }
       setMessages((data as Message[] | null) ?? []);
       setLoading(false);
     })();
@@ -102,20 +130,52 @@ export default function ChatScreen() {
     };
   }, [userId]);
 
-  const canSend = draft.trim().length > 0 && !!userId && !!coachId && !sending;
+  // The button is enabled purely by the presence of text (and not mid-send).
+  // The receiver id is resolved inside handleSend, so a not-yet-loaded coachId
+  // never disables the button.
+  const canSend = draft.trim().length > 0 && !sending;
 
   const handleSend = useCallback(async () => {
     const text = draft.trim();
-    if (!text || !userId || !coachId || sending) return;
+    if (!text || sending) return;
+    if (!userId) {
+      console.error('[ChatScreen] cannot send: no signed-in user');
+      return;
+    }
     setSending(true);
     setDraft('');
+
+    // Resolve the receiver from the coaches table by the coach's email. Prefer
+    // the id resolved on mount; if that lookup failed (null), retry it now so a
+    // transient/RLS hiccup at mount doesn't permanently block sending.
+    let receiverId = coachId;
+    if (!receiverId) {
+      const { data: coach, error: lookupError } = await supabase
+        .from('coaches')
+        .select('id')
+        .eq('email', COACH_EMAIL)
+        .maybeSingle();
+      if (lookupError) {
+        console.error('[ChatScreen] coach re-lookup failed:', lookupError.message);
+      }
+      receiverId = (coach?.id as string | undefined) ?? null;
+      if (receiverId) setCoachId(receiverId);
+    }
+    if (!receiverId) {
+      console.error('[ChatScreen] cannot send: no coach found for', COACH_EMAIL);
+      setSending(false);
+      setDraft(text); // restore the draft so the message isn't lost
+      return;
+    }
+
     const { data, error } = await supabase
       .from('messages')
-      .insert({ sender_id: userId, receiver_id: coachId, content: text })
+      .insert({ sender_id: userId, receiver_id: receiverId, content: text })
       .select(MESSAGE_FIELDS)
       .single();
     setSending(false);
     if (error) {
+      console.error('[ChatScreen] failed to send message:', error.message);
       setDraft(text); // restore the draft so the message isn't lost
       return;
     }
@@ -130,7 +190,7 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         style={styles.flex}
       >
         <View style={styles.header}>
