@@ -7,24 +7,19 @@ import {
   Pressable,
   KeyboardAvoidingView,
   StyleSheet,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  ArrowLeft,
-  ArrowUp,
-  Moon,
-  Plus,
-  Sun,
-} from 'lucide-react-native';
+import { ArrowUp } from 'lucide-react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import type { ThemeColors } from '../../theme/colors';
 
-// The displayed coach name/avatar stay hardcoded for now. The coach's id (used
-// as the receiver when sending) is looked up on mount from the `coaches` table
-// by this well-known email — see `coachId` below. This means sending works even
-// before any messages exist.
+// The coach's id (used as the receiver when sending) and avatar are looked up on
+// mount from the `coaches` table by this well-known email — see `coachId` /
+// `coachAvatarUrl` below. This means sending works even before any messages
+// exist. The name/initial fall back to these constants if the row is missing.
 const COACH = { initial: 'M', name: 'Maya Reyes' };
 const COACH_EMAIL = 'coach@getforte.com';
 
@@ -43,23 +38,25 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const { colors, isDark, toggleTheme } = useTheme();
+  const { colors } = useTheme();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const scrollRef = useRef<ScrollView>(null);
 
   const [coachId, setCoachId] = useState<string | null>(null);
+  const [coachAvatarUrl, setCoachAvatarUrl] = useState<string | null>(null);
 
-  // Look up the coach's user id directly on mount, by their well-known email,
-  // instead of inferring it from existing messages. Without this, an empty
-  // thread would leave coachId null and the send button permanently disabled.
+  // Look up the coach's user id and avatar directly on mount, by their
+  // well-known email, instead of inferring it from existing messages. Without
+  // this, an empty thread would leave coachId null and the send button
+  // permanently disabled.
   useEffect(() => {
     let active = true;
     (async () => {
       const { data, error } = await supabase
         .from('coaches')
-        .select('id')
+        .select('id, avatar_url')
         .eq('email', COACH_EMAIL)
         .maybeSingle();
       if (!active) return;
@@ -70,6 +67,7 @@ export default function ChatScreen() {
         return;
       }
       setCoachId((data?.id as string | undefined) ?? null);
+      setCoachAvatarUrl((data?.avatar_url as string | undefined) ?? null);
     })();
     return () => {
       active = false;
@@ -194,38 +192,20 @@ export default function ChatScreen() {
         style={styles.flex}
       >
         <View style={styles.header}>
-          <Pressable style={styles.headerBtn} hitSlop={8}>
-            <ArrowLeft size={22} color={colors.fg} strokeWidth={2.2} />
-          </Pressable>
-
           <View style={styles.headerCenter}>
             <View style={styles.headerAvatar}>
-              <Text style={styles.headerAvatarText}>{COACH.initial}</Text>
+              {coachAvatarUrl ? (
+                <Image
+                  source={{ uri: coachAvatarUrl }}
+                  style={styles.headerAvatarImage}
+                />
+              ) : (
+                <Text style={styles.headerAvatarText}>{COACH.initial}</Text>
+              )}
             </View>
             <View>
               <Text style={styles.headerName}>{COACH.name}</Text>
-              <View style={styles.statusRow}>
-                <View style={styles.statusDot} />
-                <Text style={styles.statusText}>Active now</Text>
-              </View>
             </View>
-          </View>
-
-          <View style={styles.headerActions}>
-            <Pressable
-              style={styles.lightToggle}
-              hitSlop={8}
-              onPress={toggleTheme}
-            >
-              {isDark ? (
-                <Sun size={16} color={colors.gold} strokeWidth={2.2} />
-              ) : (
-                <Moon size={16} color={colors.gold} strokeWidth={2.2} />
-              )}
-              <Text style={styles.lightToggleText}>
-                {isDark ? 'Light' : 'Dark'}
-              </Text>
-            </Pressable>
           </View>
         </View>
 
@@ -258,9 +238,6 @@ export default function ChatScreen() {
         </ScrollView>
 
         <View style={styles.inputBar}>
-          <Pressable style={styles.plusBtn} hitSlop={8}>
-            <Plus size={20} color={colors.bg} strokeWidth={2.6} />
-          </Pressable>
           <View style={styles.inputWrap}>
             <TextInput
               value={draft}
@@ -286,8 +263,6 @@ export default function ChatScreen() {
   );
 }
 
-const ACTIVE_GREEN = '#5EC26A';
-
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
@@ -302,13 +277,6 @@ const makeStyles = (colors: ThemeColors) =>
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  headerBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   headerCenter: {
     flex: 1,
     flexDirection: 'row',
@@ -322,38 +290,11 @@ const makeStyles = (colors: ThemeColors) =>
     backgroundColor: colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
+  headerAvatarImage: { width: '100%', height: '100%' },
   headerAvatarText: { color: colors.bg, fontSize: 15, fontWeight: '700' },
   headerName: { color: colors.fg, fontSize: 15, fontWeight: '700' },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 2,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: ACTIVE_GREEN,
-  },
-  statusText: { color: colors.fgMuted, fontSize: 11 },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  lightToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.gold,
-  },
-  lightToggleText: { color: colors.gold, fontSize: 12, fontWeight: '700' },
 
   messages: {
     paddingHorizontal: 16,
@@ -401,14 +342,6 @@ const makeStyles = (colors: ThemeColors) =>
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
     backgroundColor: colors.bg,
-  },
-  plusBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   inputWrap: {
     flex: 1,
